@@ -35,8 +35,9 @@ class FirebaseAccountAuthRepository(
 
     private suspend fun performAuth(operation: suspend () -> com.google.firebase.auth.FirebaseUser?): AccountAuthResult =
         try {
-            val user = operation() ?: return AccountAuthResult.Failure("Firebase no devolvió una cuenta válida.")
-            AccountAuthResult.Success(AppAccount(uid = user.uid, email = user.email))
+            val user = operation()
+            if (user == null) AccountAuthResult.Failure("Firebase no devolvió una cuenta válida.")
+            else AccountAuthResult.Success(AppAccount(uid = user.uid, email = user.email))
         } catch (error: Exception) {
             AccountAuthResult.Failure(error.toUserMessage())
         }
