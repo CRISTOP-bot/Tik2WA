@@ -31,6 +31,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -56,6 +58,8 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -80,6 +84,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -157,7 +165,14 @@ private fun Tik2WaApp() {
                                 onAddAll = { viewModel.addAllStickers() }
                             )
                             MainTab.Sync -> SyncScreen(state.syncStep, state.syncProgress, onStart = { viewModel.playSyncPreview() })
-                            MainTab.Profile -> ProfileScreen(onSettings = viewModel::openSettings)
+                            MainTab.Profile -> ProfileScreen(
+                                accountEmail = state.accountEmail,
+                                authLoading = state.authLoading,
+                                authMessage = state.authMessage,
+                                onAuthenticate = { email, password, create -> viewModel.authenticate(email, password, create) },
+                                onSignOut = { viewModel.signOutAppAccount() },
+                                onSettings = viewModel::openSettings
+                            )
                         }
                     }
                 }
@@ -439,20 +454,81 @@ private fun SettingsScreen(autoSync: Boolean, onAutoSync: (Boolean) -> Unit, not
 }
 
 @Composable
-private fun ProfileScreen(onSettings: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(horizontal = 22.dp)) {
-        ScreenHeading("Tu perfil", "Todo bajo tu control.")
-        Spacer(Modifier.height(24.dp))
-        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(24.dp)) {
-            Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.size(76.dp).clip(CircleShape).background(Color(0xFF202A37)), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Person, null, tint = Cyan, modifier = Modifier.size(36.dp)) }
-                Spacer(Modifier.height(12.dp)); Text("Sin cuentas vinculadas", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Text("Conecta servicios solo cuando exista un método oficial.", color = Muted, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp))
+private fun ProfileScreen(
+    accountEmail: String?,
+    authLoading: Boolean,
+    authMessage: String?,
+    onAuthenticate: (String, String, Boolean) -> Unit,
+    onSignOut: () -> Unit,
+    onSettings: () -> Unit
+) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp)) {
+        ScreenHeading("Tu perfil", "Tu cuenta de Tik2WA y conexiones.")
+        Spacer(Modifier.height(18.dp))
+        FirebaseAccountCard(accountEmail, authLoading, authMessage, onAuthenticate, onSignOut)
+        Spacer(Modifier.height(16.dp))
+        ProviderStatusCard("TikTok", "No conectado", Pink, "Acceso a Favoritos no disponible mediante API pública oficial.")
+        Spacer(Modifier.height(12.dp))
+        ProviderStatusCard("WhatsApp", "No conectado", Green, "La importación debe pasar por el flujo de pack oficial.")
+        Spacer(Modifier.height(16.dp))
+        OutlinedButton(onClick = onSettings, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp)) { Icon(Icons.Rounded.Settings, null); Spacer(Modifier.width(8.dp)); Text("Abrir Settings") }
+        Spacer(Modifier.height(18.dp))
+    }
+}
+
+@Composable
+private fun FirebaseAccountCard(
+    accountEmail: String?,
+    loading: Boolean,
+    message: String?,
+    onAuthenticate: (String, String, Boolean) -> Unit,
+    onSignOut: () -> Unit
+) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var creatingAccount by remember { mutableStateOf(false) }
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(24.dp)) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(38.dp).clip(RoundedCornerShape(13.dp)).background(Color(0x203CE4D2)), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Person, null, tint = Cyan, modifier = Modifier.size(20.dp)) }
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text("Cuenta Tik2WA", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Text(if (accountEmail == null) "Firebase Authentication · correo" else "Sesión iniciada", color = Muted, fontSize = 11.sp)
+                }
             }
+            if (accountEmail != null) {
+                Text(accountEmail, color = Cyan, fontSize = 13.sp)
+                OutlinedButton(onClick = onSignOut, enabled = !loading, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Text("Cerrar sesión") }
+            } else {
+                OutlinedTextField(
+                    value = email, onValueChange = { email = it }, label = { Text("Correo electrónico") },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !loading,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Cyan, cursorColor = Cyan)
+                )
+                OutlinedTextField(
+                    value = password, onValueChange = { password = it }, label = { Text("Contraseña") },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !loading,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Cyan, cursorColor = Cyan)
+                )
+                if (message != null) Text(message, color = if (message.startsWith("No se pudo")) Pink else Cyan, fontSize = 12.sp)
+                Button(
+                    onClick = { onAuthenticate(email, password, creatingAccount) }, enabled = !loading && email.isNotBlank() && password.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(15.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Cyan, contentColor = Bg)
+                ) {
+                    if (loading) CircularProgressIndicator(Modifier.size(19.dp), color = Bg, strokeWidth = 2.dp)
+                    else Text(if (creatingAccount) "Crear cuenta" else "Iniciar sesión", fontWeight = FontWeight.Bold)
+                }
+                TextButton(onClick = { creatingAccount = !creatingAccount }, enabled = !loading, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                    Text(if (creatingAccount) "Ya tengo cuenta · Iniciar sesión" else "¿Primera vez? Crear cuenta", color = Muted, fontSize = 12.sp)
+                }
+            }
+            if (message != null && accountEmail != null) Text(message, color = Cyan, fontSize = 12.sp)
         }
-        Spacer(Modifier.height(16.dp)); ProviderStatusCard("TikTok", "No conectado", Pink, "Acceso a Favoritos no disponible mediante API pública oficial.")
-        Spacer(Modifier.height(12.dp)); ProviderStatusCard("WhatsApp", "No conectado", Green, "La importación debe pasar por el flujo de pack oficial.")
-        Spacer(Modifier.weight(1f)); OutlinedButton(onClick = onSettings, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(15.dp)) { Icon(Icons.Rounded.Settings, null); Spacer(Modifier.width(8.dp)); Text("Abrir Settings") }; Spacer(Modifier.height(14.dp))
     }
 }
 

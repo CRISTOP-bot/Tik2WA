@@ -4,12 +4,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tik2wa.data.integration.UnavailableTikTokProvider
 import com.tik2wa.data.integration.UnavailableWhatsAppProvider
+import com.tik2wa.data.auth.FirebaseAccountAuthRepository
+import com.tik2wa.domain.auth.AccountAuthRepository
+import com.tik2wa.domain.auth.AccountAuthResult
 import com.tik2wa.data.stickers.StickerDeduplicator
 import com.tik2wa.domain.model.Sticker
 import com.tik2wa.domain.provider.IntegrationResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -25,15 +29,27 @@ data class Tik2WaUiState(
     val notifications: Boolean = true,
     val darkAppearance: Boolean = true,
     val stickers: List<Sticker> = emptyList(),
-    val selectedStickerIds: Set<String> = emptySet()
+    val selectedStickerIds: Set<String> = emptySet(),
+    val accountEmail: String? = null,
+    val authLoading: Boolean = false,
+    val authMessage: String? = null
 )
 
 /** Owns screen state and orchestrates provider calls; composables remain presentation-only. */
 class Tik2WaViewModel : ViewModel() {
     private val tiktok = UnavailableTikTokProvider()
     private val whatsapp = UnavailableWhatsAppProvider()
+    private val accountAuth: AccountAuthRepository = FirebaseAccountAuthRepository()
     private val mutableUiState = MutableStateFlow(Tik2WaUiState())
     val uiState = mutableUiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            accountAuth.account.collect { account ->
+                mutableUiState.update { it.copy(accountEmail = account?.email) }
+            }
+        }
+    }
 
     fun navigate(tab: MainTab) = mutableUiState.update { it.copy(tab = tab, settingsOpen = false) }
     fun toggleSettings() = mutableUiState.update { it.copy(settingsOpen = !it.settingsOpen) }
@@ -43,6 +59,26 @@ class Tik2WaViewModel : ViewModel() {
     fun setNotifications(value: Boolean) = mutableUiState.update { it.copy(notifications = value) }
     fun setDarkAppearance(value: Boolean) = mutableUiState.update { it.copy(darkAppearance = value) }
     fun logout() = show("No hay sesiones conectadas que cerrar.")
+
+    fun authenticate(email: String, password: String, createAccount: Boolean) = viewModelScope.launch {
+        mutableUiState.update { it.copy(authLoading = true, authMessage = null) }
+        val result = if (createAccount) accountAuth.register(email, password) else accountAuth.signIn(email, password)
+        mutableUiState.update { state ->
+            when (result) {
+                is AccountAuthResult.Success -> state.copy(
+                    authLoading = false,
+                    accountEmail = result.account.email,
+                    authMessage = if (createAccount) "Cuenta creada y sesión iniciada." else "Sesión iniciada."
+                )
+                is AccountAuthResult.Failure -> state.copy(authLoading = false, authMessage = result.message)
+            }
+        }
+    }
+
+    fun signOutAppAccount() = viewModelScope.launch {
+        accountAuth.signOut()
+        mutableUiState.update { it.copy(accountEmail = null, authMessage = "Sesión cerrada.") }
+    }
 
     fun connectTikTok() = viewModelScope.launch {
         show(unavailableMessage(tiktok.signIn()))

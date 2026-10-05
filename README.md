@@ -15,7 +15,14 @@ Para completar el producto hace falta conseguir un método autorizado de origen 
 - Interfaces `TikTokStickerProvider`, `WhatsAppStickerProvider`, `AuthProvider`, `StickerRepository` y `SyncRepository`; implementaciones deshabilitadas que devuelven una razón legible.
 - Conversor estático de bytes de imagen a WebP cuadrado de 512 px, con optimización al límite de 100 KiB y procesamiento en memoria. Animación de origen se rechaza expresamente: la conversión animada no está implementada.
 - Deduplicación por hash (SHA-256) y persistencia local de hashes ya sincronizados.
-- `SecureStorage` basado en AndroidX Security/Keystore para credenciales futuras. Esta versión no recoge tokens.
+- `SecureStorage` basado en AndroidX Security/Keystore para credenciales futuras. Esta capa no almacena contraseñas.
+- Firebase Authentication con correo/contraseña, estado de sesión observado mediante Flow y formulario de acceso/registro desde Perfil. `app/google-services.json` corresponde al paquete `com.tik2wa`.
+
+### Requisitos de Firebase Auth
+
+En Firebase Console, abre **Authentication → Sign-in method** y habilita **Correo electrónico/contraseña**. La autenticación implementada es para la cuenta de Tik2WA; no inicia sesión en TikTok ni vincula WhatsApp. Google Sign-In no está incluido porque la configuración que recibimos no contiene clientes OAuth; para añadirlo hay que registrar las huellas SHA-1/SHA-256 del certificado y configurar el proveedor.
+
+El archivo `google-services.json` contiene configuración de cliente diseñada para apps Android; no es un secreto de servidor. Como el repositorio es público, restringe la API key en Google Cloud/Firebase y configura reglas/controles adecuados para cualquier otro servicio Firebase que habilites.
 - Prueba unitaria para deduplicación y hash.
 
 ## Compilar y publicar
