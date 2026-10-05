@@ -1,0 +1,76 @@
+name: Android build and release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Tag de release (por ejemplo v0.1.0); vacío = solo compilar'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  JAVA_VERSION: '17'
+
+jobs:
+  build:
+    name: Test and build APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Install JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install required Android platform
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Run unit tests and build APK
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tik2WA-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish APK to GitHub Releases
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download compiled APK
+        uses: actions/download-artifact@v4
+        with:
+          name: Tik2WA-debug-apk
+          path: release-assets
+      - name: Create GitHub Release and attach APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: Tik2WA ${{ inputs.release_tag || github.ref_name }}
+          body: |
+            APK compilado por GitHub Actions desde este commit.
+
+            **Nota:** es un APK firmado con la clave debug de CI para pruebas. No es una compilación de producción firmada.
+            La integración real de TikTok Favoritos y la importación a WhatsApp aún no están disponibles; consulta el README.
+          files: release-assets/app-debug.apk
+          fail_on_unmatched_files: true
+          generate_release_notes: true
